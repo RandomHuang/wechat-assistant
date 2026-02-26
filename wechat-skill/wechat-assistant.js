@@ -102,30 +102,15 @@ class WeChatLog {
     }
 }
 
-// 发送消息（通过 AppleScript）
+// 发送消息（通过 AppleScript 文件）
 function sendMessage(contact, message) {
-    const script = `
-        tell application "System Events"
-            tell application "WeChat"
-                activate
-            end tell
-            delay 1
-            tell process "WeChat"
-                keystroke "f" using command down
-                delay 0.5
-                keystroke "${contact}"
-                delay 1
-                keystroke return
-                delay 0.5
-                keystroke "${message}"
-                delay 0.3
-                keystroke return using command down
-            end tell
-        end tell
-    `;
+    const scriptPath = path.join(__dirname, 'wechat-send-fixed.scpt');
     
     try {
-        execSync(`osascript -e '${script}'`, { stdio: 'pipe' });
+        execSync(`osascript "${scriptPath}" "${contact}" "${message}"`, { 
+            stdio: 'pipe',
+            timeout: 10000 
+        });
         return true;
     } catch (e) {
         console.error('发送失败:', e.message);
