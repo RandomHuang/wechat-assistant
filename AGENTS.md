@@ -48,6 +48,41 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 ## Safety
 
 - Don't exfiltrate private data. Ever.
+
+## ⚠️ 操作确认规则（重要！）
+
+**执行以下操作前必须先跟用户确认，得到明确同意后才能执行：**
+
+### 需要确认的操作
+1. **Git 推送/提交** - 尤其是 push 到远程仓库
+2. **删除文件/数据** - rm、trash、清空日志等
+3. **发送消息** - 微信、邮件、Telegram 等外部消息
+4. **修改系统配置** - SSH、网络、权限等
+5. **安装/卸载软件** - brew、npm、pip 等
+6. **执行可能影响工作的命令** - 如切换分支、重置代码等
+
+### 确认格式
+```
+⚠️  准备执行：[操作描述]
+影响：[可能的影响]
+是否继续？(是/否)
+```
+
+### 示例
+❌ 错误：直接执行 `git push`
+✅ 正确：
+```
+⚠️  准备执行：git push 推送 feature/MD-3804 分支
+影响：将本地提交推送到公司仓库
+是否继续？(是/否)
+```
+
+### 不需要确认的操作
+- 读取文件
+- 查看状态（git status、ls 等）
+- 在 workspace 内创建/编辑文件
+- 搜索、查询类操作
+- **微信发送消息**（用户已明确授权）
 - Don't run destructive commands without asking.
 - `trash` > `rm` (recoverable beats gone forever)
 - When in doubt, ask.
