@@ -1,0 +1,24 @@
+{
+  "name": "wechat-assistant",
+  "version": "1.0.0",
+  "description": "Mac 微信自动化私人助手 - OpenClaw Skill",
+  "main": "wechat-assistant.js",
+  "scripts": {
+    "send": "node wechat-assistant.js send",
+    "status": "node wechat-assistant.js status",
+    "log": "node wechat-assistant.js log",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "wechat",
+    "automation",
+    "openclaw",
+    "macos"
+  ],
+  "author": "Random",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/randomhuangpl/wechat-assistant.git"
+  }
+}
