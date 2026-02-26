@@ -48,9 +48,9 @@ function ocrScreen(region) {
     const img = '/tmp/wechat_ocr.png';
     try { execSync(`rm -f "${img}"`); } catch (e) {}
     if (region) {
-        execSync(`screencapture -R${region.x},${region.y},${region.w},${region.h} "${img}"`);
+        execSync(`/usr/sbin/screencapture -R${region.x},${region.y},${region.w},${region.h} "${img}"`);
     } else {
-        execSync(`screencapture -x "${img}"`);
+        execSync(`/usr/sbin/screencapture -x "${img}"`);
     }
 
     const swiftScript = `
