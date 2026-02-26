@@ -100,11 +100,13 @@ if let image = NSImage(contentsOf: url), let cgImage = image.cgImage(forProposed
 
 function findContact(results, contactName) {
     const SKIP_HEADERS = ['联系人', '群聊', '聊天记录', '功能', '搜索网络结果', '查看全部', '公众号'];
-
+    
+    // First pass: exact match
     for (const r of results) {
         if (r.text === contactName) return r;
     }
-
+    
+    // Second pass: partial match, skip headers
     for (const r of results) {
         if (r.text.startsWith('Q ') || r.text.startsWith('Q ')) continue;
         if (SKIP_HEADERS.includes(r.text)) continue;
@@ -113,13 +115,14 @@ function findContact(results, contactName) {
             return r;
         }
     }
-
+    
     return null;
 }
 
 function sendViaAppleScript(text) {
     const escapedText = text.replace(/"/g, '\\"').replace(/`/g, '\\`');
     const delayBeforeEnter = (Math.random() * 0.8 + 0.5).toFixed(2);
+    
     const script = `
         set the clipboard to "${escapedText}"
         tell application "System Events" to tell process "WeChat"
@@ -129,12 +132,14 @@ function sendViaAppleScript(text) {
             key code 36 -- Enter
         end tell
     `;
-    try { execSync(`osascript -e '${script}'`); } catch (e) {}
+    
+    try {
+        execSync(`osascript -e '${script}'`);
+    } catch (e) {}
 }
 
 async function main() {
     const args = process.argv.slice(2);
-
     if (args[0] !== 'send' || args.length < 3) {
         console.log(`
 🤖 WeChat Assistant
@@ -145,7 +150,7 @@ async function main() {
 示例:
   node wechat-assistant.js send "张三" "你好！"
   node wechat-assistant.js send "文件传输助手" "测试消息"
-        `);
+`);
         return;
     }
 
@@ -154,7 +159,7 @@ async function main() {
     const screen = getScreenSize();
 
     log(`📤 准备发送消息给 "${contact}"...`);
-    log(`🖥️  屏幕: ${screen.w}x${screen.h} 点`);
+    log(`🖥️  屏幕：${screen.w}x${screen.h} 点`);
 
     // 1. Focus WeChat
     ensureFocus();
@@ -204,7 +209,7 @@ async function main() {
     const target = findContact(results, contact);
 
     if (!target) {
-        log('❌ 搜索结果中未找到: ' + contact);
+        log('❌ 搜索结果中未找到：' + contact);
         return;
     }
 
@@ -251,7 +256,7 @@ async function main() {
     await sleep(500);
 
     // 10. Send message
-    log(`📝 发送消息: ${message}`);
+    log(`📝 发送消息：${message}`);
     sendViaAppleScript(message);
     await sleep(1000);
 
