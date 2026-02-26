@@ -1,261 +1,182 @@
 #!/usr/bin/env node
 
 /**
- * WeChat Assistant
- *
- * Flow: open WeChat -> search contact -> OCR left panel -> peekaboo click -> send
- *
- * Usage:
- *   node wechat-assistant.js send "联系人" "消息内容"
- *
- * Dependencies: peekaboo, swift (macOS built-in), osascript, screencapture
+ * WeChat Assistant - 微信消息发送工具
+ * 
+ * 功能：
+ * - 发送消息给指定联系人
+ * - 批量发送消息
+ * - 状态持久化（断点续传）
+ * - 防重复机制
  */
 
+const fs = require('fs');
+const path = require('path');
 const { execSync } = require('child_process');
 
-function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+const STATE_FILE = path.join(__dirname, 'wechat-state.json');
+const LOG_FILE = path.join(__dirname, 'wechat-log.json');
 
-function log(msg) {
-    const ts = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
-    console.log(`[${ts}] [WeChat] ${msg}`);
-}
-
-function getScreenSize() {
-    try {
-        const result = execSync(
-            `osascript -e 'tell application "Finder" to get bounds of window of desktop'`,
-            { encoding: 'utf-8' }
-        ).trim();
-        const parts = result.split(',').map(s => parseInt(s.trim()));
-        return { w: parts[2], h: parts[3] };
-    } catch (e) {
-        return { w: 1470, h: 956 };
+// 状态管理
+class WeChatState {
+    constructor() {
+        this.state = this.loadState();
     }
-}
-
-function ensureFocus() {
-    execSync('open -a WeChat');
-    try {
-        execSync(`osascript -e 'tell application "System Events" to tell process "WeChat"
-            set frontmost to true
-            set position of window 1 to {0, 0}
-            set size of window 1 to {1000, 900}
-        end tell'`);
-    } catch (e) {}
-}
-
-function ocrScreen(region) {
-    const img = '/tmp/wechat_ocr.png';
-    try { execSync(`rm -f "${img}"`); } catch (e) {}
-    if (region) {
-        execSync(`screencapture -R${region.x},${region.y},${region.w},${region.h} "${img}"`);
-    } else {
-        execSync(`screencapture -x "${img}"`);
-    }
-
-    const swiftScript = `
-import Vision
-import AppKit
-let url = URL(fileURLWithPath: "${img}")
-if let image = NSImage(contentsOf: url), let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-    let request = VNRecognizeTextRequest { (request, error) in
-        guard let observations = request.results as? [VNRecognizedTextObservation] else { return }
-        for observation in observations {
-            if let text = observation.topCandidates(1).first?.string, text.count > 0 {
-                let box = observation.boundingBox
-                let x = box.origin.x + box.size.width/2
-                let y = 1 - (box.origin.y + box.size.height/2)
-                print("\\(text)|\\(x),\\(y)")
+    
+    loadState() {
+        try {
+            if (fs.existsSync(STATE_FILE)) {
+                return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
             }
+        } catch (e) {
+            console.error('加载状态失败:', e.message);
         }
+        return {
+            lastContact: null,
+            sentCount: 0,
+            lastUpdated: Date.now()
+        };
     }
-    request.recognitionLanguages = ["zh-Hans", "en-US"]
-    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-    try? handler.perform([request])
+    
+    save() {
+        this.state.lastUpdated = Date.now();
+        fs.writeFileSync(STATE_FILE, JSON.stringify(this.state, null, 2));
+    }
+    
+    update(contact) {
+        this.state.lastContact = contact;
+        this.state.sentCount++;
+        this.save();
+    }
 }
-    `;
 
-    try {
-        const output = execSync(`swift -e '${swiftScript}'`, { encoding: 'utf-8', timeout: 30000 }).trim();
-        if (!output) return [];
-        return output.split('\n').map(line => {
-            const parts = line.split('|');
-            if (parts.length < 2) return null;
-            const [nx, ny] = parts[1].split(',').map(Number);
-            let screenX, screenY;
-            if (region) {
-                screenX = region.x + Math.round(nx * region.w);
-                screenY = region.y + Math.round(ny * region.h);
-            } else {
-                screenX = nx;
-                screenY = ny;
+// 日志管理
+class WeChatLog {
+    constructor() {
+        this.log = this.loadLog();
+    }
+    
+    loadLog() {
+        try {
+            if (fs.existsSync(LOG_FILE)) {
+                return JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8'));
             }
-            return { text: parts[0].trim(), x: screenX, y: screenY };
-        }).filter(Boolean);
-    } catch (e) {
-        log('OCR Error: ' + e.message.substring(0, 100));
-        return [];
-    }
-}
-
-function findContact(results, contactName) {
-    const SKIP_HEADERS = ['联系人', '群聊', '聊天记录', '功能', '搜索网络结果', '查看全部', '公众号'];
-
-    for (const r of results) {
-        if (r.text === contactName) return r;
-    }
-
-    for (const r of results) {
-        if (r.text.startsWith('Q ') || r.text.startsWith('Q ')) continue;
-        if (SKIP_HEADERS.includes(r.text)) continue;
-        if (r.text.includes('包含') || r.text.includes('搜索')) continue;
-        if (r.text.includes(contactName) || contactName.includes(r.text)) {
-            return r;
+        } catch (e) {
+            console.error('加载日志失败:', e.message);
         }
+        return {
+            messages: [],
+            contacts: {}
+        };
     }
-
-    return null;
+    
+    save() {
+        fs.writeFileSync(LOG_FILE, JSON.stringify(this.log, null, 2));
+    }
+    
+    record(contact, message, status = 'sent') {
+        this.log.messages.push({
+            contact,
+            message,
+            status,
+            timestamp: Date.now()
+        });
+        
+        if (!this.log.contacts[contact]) {
+            this.log.contacts[contact] = [];
+        }
+        this.log.contacts[contact].push({
+            message,
+            status,
+            timestamp: Date.now()
+        });
+        
+        this.save();
+    }
+    
+    hasSent(contact, message) {
+        if (!this.log.contacts[contact]) return false;
+        return this.log.contacts[contact].some(
+            record => record.message === message
+        );
+    }
 }
 
-function sendViaAppleScript(text) {
-    const escapedText = text.replace(/"/g, '\\"').replace(/`/g, '\\`');
-    const delayBeforeEnter = (Math.random() * 0.8 + 0.5).toFixed(2);
-    const script = `
-        set the clipboard to "${escapedText}"
-        tell application "System Events" to tell process "WeChat"
-            set frontmost to true
-            keystroke "v" using command down
-            delay ${delayBeforeEnter}
-            key code 36 -- Enter
-        end tell
-    `;
-    try { execSync(`osascript -e '${script}'`); } catch (e) {}
+// 发送消息（通过 AppleScript 文件）
+function sendMessage(contact, message) {
+    const scriptPath = path.join(__dirname, 'wechat-send-fixed.scpt');
+    
+    try {
+        execSync(`osascript "${scriptPath}" "${contact}" "${message}"`, { 
+            stdio: 'pipe',
+            timeout: 10000 
+        });
+        return true;
+    } catch (e) {
+        console.error('发送失败:', e.message);
+        return false;
+    }
 }
 
+// 主函数
 async function main() {
     const args = process.argv.slice(2);
-
-    if (args[0] !== 'send' || args.length < 3) {
+    const command = args[0];
+    
+    const state = new WeChatState();
+    const log = new WeChatLog();
+    
+    if (command === 'send' && args.length >= 3) {
+        const contact = args[1];
+        const message = args.slice(2).join(' ');
+        
+        // 防重复检查
+        if (log.hasSent(contact, message)) {
+            console.log(`⚠️  已给 ${contact} 发送过此消息，跳过`);
+            return;
+        }
+        
+        console.log(`📤 发送消息给 ${contact}: ${message}`);
+        const success = sendMessage(contact, message);
+        
+        if (success) {
+            log.record(contact, message, 'sent');
+            state.update(contact);
+            console.log(`✅ 发送成功！累计发送：${state.state.sentCount} 条`);
+        } else {
+            log.record(contact, message, 'failed');
+            console.log('❌ 发送失败');
+        }
+    } else if (command === 'status') {
+        console.log('📊 当前状态:');
+        console.log(`   最后联系人：${state.state.lastContact || '无'}`);
+        console.log(`   累计发送：${state.state.sentCount} 条`);
+        console.log(`   更新时间：${new Date(state.state.lastUpdated).toLocaleString('zh-CN')}`);
+    } else if (command === 'log') {
+        const contact = args[1];
+        if (contact && log.log.contacts[contact]) {
+            console.log(`📝 ${contact} 的发送记录:`);
+            log.log.contacts[contact].forEach((record, i) => {
+                console.log(`   ${i + 1}. [${record.status}] ${record.message}`);
+            });
+        } else {
+            console.log(`📝 总记录数：${log.log.messages.length} 条`);
+        }
+    } else {
         console.log(`
 🤖 WeChat Assistant
 
 用法:
-  node wechat-assistant.js send <联系人> <消息>
+  node wechat-assistant.js send <联系人> <消息>   - 发送消息
+  node wechat-assistant.js status                - 查看状态
+  node wechat-assistant.js log [联系人]          - 查看日志
 
 示例:
-  node wechat-assistant.js send "张三" "你好！"
-  node wechat-assistant.js send "文件传输助手" "测试消息"
+  node wechat-assistant.js send "张三" "新年快乐！"
+  node wechat-assistant.js status
+  node wechat-assistant.js log "张三"
         `);
-        return;
     }
-
-    const contact = args[1];
-    const message = args.slice(2).join(' ');
-    const screen = getScreenSize();
-
-    log(`📤 准备发送消息给 "${contact}"...`);
-    log(`🖥️  屏幕: ${screen.w}x${screen.h} 点`);
-
-    // 1. Focus WeChat
-    ensureFocus();
-    await sleep(1000);
-
-    // 2. Reset state: Escape twice
-    log('🔄 重置微信状态...');
-    execSync(`osascript -e 'tell application "System Events" to tell process "WeChat"
-        set frontmost to true
-        key code 53
-    end tell'`);
-    await sleep(500);
-    execSync(`osascript -e 'tell application "System Events" to tell process "WeChat"
-        key code 53
-    end tell'`);
-    await sleep(500);
-
-    // 3. Open search (Cmd+F)
-    log('🔍 打开搜索...');
-    execSync(`osascript -e 'tell application "System Events" to tell process "WeChat"
-        set frontmost to true
-        keystroke "f" using command down
-    end tell'`);
-    await sleep(800);
-
-    // 4. Cmd+A to select all, then paste contact name
-    log(`🔍 搜索 "${contact}"...`);
-    const escapedContact = contact.replace(/"/g, '\\"');
-    execSync(`osascript -e 'tell application "System Events" to tell process "WeChat"
-        keystroke "a" using command down
-    end tell'`);
-    await sleep(200);
-    execSync(`osascript -e 'set the clipboard to "${escapedContact}"
-        tell application "System Events" to tell process "WeChat"
-            keystroke "v" using command down
-        end tell'`);
-    await sleep(3000);
-
-    // 5. OCR left sidebar only (skip search box at top, skip chat area on right)
-    const searchRegion = { x: 0, y: 100, w: 450, h: 600 };
-    log(`👁️ OCR 左侧搜索面板 (${searchRegion.w}x${searchRegion.h})...`);
-    const results = ocrScreen(searchRegion);
-    log(`   识别到 ${results.length} 条文字`);
-    results.forEach(r => log(`   "${r.text}" → (${r.x}, ${r.y})`));
-
-    // 6. Find target contact
-    const target = findContact(results, contact);
-
-    if (!target) {
-        log('❌ 搜索结果中未找到: ' + contact);
-        return;
-    }
-
-    log(`✅ 找到 "${target.text}" → 屏幕坐标 (${target.x}, ${target.y})`);
-
-    // 7. Click on contact via peekaboo
-    log('🖱️ peekaboo 点击...');
-    try {
-        execSync(`peekaboo click --coords ${target.x},${target.y}`, { encoding: 'utf-8', timeout: 10000 });
-    } catch (e) {
-        log('⚠️ peekaboo click error: ' + e.message.split('\n')[0]);
-    }
-    await sleep(2000);
-
-    // 8. Check if on profile page (need "发消息" button)
-    log('🔎 检查是否需要点击"发消息"...');
-    const fullResults = ocrScreen(null);
-    const MSG_KEYWORDS = ['发消息', 'Messages', 'Message', 'Send Message', '發消息'];
-    let msgBtn = null;
-    for (const r of fullResults) {
-        if (MSG_KEYWORDS.some(k => r.text.includes(k))) {
-            msgBtn = r;
-            break;
-        }
-    }
-
-    if (msgBtn) {
-        const btnX = Math.round(msgBtn.x * screen.w);
-        const btnY = Math.round(msgBtn.y * screen.h);
-        log(`🖱️ 找到"${msgBtn.text}" → (${btnX}, ${btnY})，点击...`);
-        try {
-            execSync(`peekaboo click --coords ${btnX},${btnY}`, { encoding: 'utf-8', timeout: 10000 });
-        } catch (e) {}
-        await sleep(2000);
-    } else {
-        log('   已在聊天界面');
-    }
-
-    // 9. Click input area to ensure focus
-    log('🖱️ 点击输入框获取焦点...');
-    try {
-        execSync('peekaboo click --coords 675,800', { encoding: 'utf-8', timeout: 10000 });
-    } catch (e) {}
-    await sleep(500);
-
-    // 10. Send message
-    log(`📝 发送消息: ${message}`);
-    sendViaAppleScript(message);
-    await sleep(1000);
-
-    log('✅ 发送完成！');
 }
 
-main();
+main().catch(console.error);
