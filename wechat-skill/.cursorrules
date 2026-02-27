@@ -1,0 +1,45 @@
+# WeChat Assistant - Cursor Rules
+
+## 项目概述
+Mac 微信自动化助手，通过 AppleScript 控制微信 Mac 客户端发送消息。
+
+## 技术栈
+- Node.js (v22+)
+- AppleScript (macOS)
+- OpenClaw Skill System
+
+## 核心文件
+- `wechat-assistant.js` - 主程序（状态管理、日志、重试机制）
+- `wechat-send-fixed.scpt` - AppleScript 脚本（微信控制）
+- `wechat-state.json` - 运行状态（自动生成）
+- `wechat-log.json` - 发送日志（自动生成）
+
+## 编码规范
+1. 使用中文注释和日志输出
+2. 错误处理要完善，带重试机制
+3. 所有文件操作要检查存在性
+4. AppleScript 调用要转义特殊字符
+5. 日志限制大小，避免文件过大
+
+## 修改代码时的注意事项
+1. AppleScript 路径变更要同步更新 `SCRIPT_FILE` 常量
+2. 修改发送逻辑要测试防重复机制
+3. 新增功能要更新 `--help` 输出
+4. 状态文件格式变更要考虑向后兼容
+
+## 测试方法
+```bash
+# 发送测试
+node wechat-assistant.js send "Random" "测试消息"
+
+# 查看状态
+node wechat-assistant.js status
+
+# 查看日志
+node wechat-assistant.js log "Random"
+```
+
+## 常见问题
+1. **辅助功能权限** - 需要在系统设置中开启
+2. **微信窗口结构** - 不同版本可能不同，AppleScript 需要适配
+3. **中文输入** - 使用 `set value` 而非 `keystroke`
