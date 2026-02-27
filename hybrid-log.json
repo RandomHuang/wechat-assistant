@@ -1,0 +1,34 @@
+{
+  "messages": [
+    {
+      "contact": "Random",
+      "message": "混合模式测试 🎯",
+      "status": "failed",
+      "steps": [],
+      "timestamp": 1772095293122
+    },
+    {
+      "contact": "Random",
+      "message": "混合模式最终测试 ✨",
+      "status": "sent",
+      "steps": [],
+      "timestamp": 1772095333126
+    }
+  ],
+  "contacts": {
+    "Random": [
+      {
+        "message": "混合模式测试 🎯",
+        "status": "failed",
+        "steps": [],
+        "timestamp": 1772095293122
+      },
+      {
+        "message": "混合模式最终测试 ✨",
+        "status": "sent",
+        "steps": [],
+        "timestamp": 1772095333126
+      }
+    ]
+  }
+}

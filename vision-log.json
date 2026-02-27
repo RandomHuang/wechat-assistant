@@ -1,0 +1,21 @@
+{
+  "messages": [
+    {
+      "contact": "Random",
+      "message": "视觉模式测试消息 👁️",
+      "status": "failed",
+      "steps": [],
+      "timestamp": 1772095208513
+    }
+  ],
+  "contacts": {
+    "Random": [
+      {
+        "message": "视觉模式测试消息 👁️",
+        "status": "failed",
+        "steps": [],
+        "timestamp": 1772095208513
+      }
+    ]
+  }
+}
